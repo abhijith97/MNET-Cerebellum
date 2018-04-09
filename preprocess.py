@@ -19,8 +19,8 @@ def convert_seg(data):
 	return l
 
 #TRAIN
-train_x_dir = "Cerebellum_IBSR/brain/train/"
-train_y_dir = "Cerebellum_IBSR/labels/train/"
+train_x_dir = "Cerebellum_IBSR_Org/brain/train/"
+train_y_dir = "Cerebellum_IBSR_Org/labels/train/"
 
 train_x_samples = []
 train_y_samples = []
@@ -48,6 +48,7 @@ for file in lst:
 train_x = np.asarray(train_x_samples)
 train_y = np.asarray(train_y_samples)
 
+train_y[train_y==1]=0
 train_y[train_y==7]=1
 train_y[train_y==8]=1
 train_y[train_y==46]=1
@@ -58,8 +59,8 @@ print train_x.shape, train_y.shape
 
 
 def write_numpy(s):
-	x_dir = "Cerebellum_IBSR/brain/"+s+"/"
-	y_dir = "Cerebellum_IBSR/labels/"+s+"/"
+	x_dir = "Cerebellum_IBSR_Org/brain/"+s+"/"
+	y_dir = "Cerebellum_IBSR_Org/labels/"+s+"/"
 
 	x_samples = []
 	y_samples = []
@@ -86,17 +87,25 @@ def write_numpy(s):
 
 	x = np.asarray(x_samples)
 	y = np.asarray(y_samples)
+
+	y[y==1]=0
+	y[y==7]=1
+	y[y==8]=1
+	y[y==46]=1
+	y[y==47]=1
+	y[y!=1]=0
+
 	print x.shape, y.shape
 	print x[0].shape, y[0].shape
 
-	# for i in range(0, x.shape[0]):
-		# np.savez("./Data/"+s+"/"+str(i)+".npz", x = x[i], y = y[i])
+	for i in range(0, x.shape[0]):
+		np.savez_compressed("./Data_Org/"+s+"/"+str(i)+".npz", x = x[i], y = y[i])
 
 print "Writing train to disk"
-# np.savez("./Data/train.npz", x = train_x, y = train_y)
+np.savez_compressed("./Data_Org/train.npz", x = train_x, y = train_y)
 print "Writing train"
 write_numpy("train")
-# print "Writing val"
-# write_numpy("val")
-# print "Writing test"
-# write_numpy("test")
+print "Writing val"
+write_numpy("val")
+print "Writing test"
+write_numpy("test")

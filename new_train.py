@@ -9,6 +9,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import math
 import pdb
+import tensorflow as tf
 
 import keras as keras
 from keras.models import Model
@@ -21,13 +22,23 @@ from keras.optimizers import SGD, Adam
 from keras import losses
 from sklearn.metrics import f1_score
 from sklearn.metrics import accuracy_score
+import nibabel as nib
 
 # image_data_format = channels_last
 K.set_image_data_format('channels_last')
 print keras.backend.image_data_format()
 
 ##############################################################################
-###############################################################################
+##############################################################################
+
+def weighted_pixelwise_crossentropy(class_weights):
+    
+    def loss(y_true, y_pred):
+        epsilon =  tf.convert_to_tensor(keras.backend.epsilon(), y_pred.dtype.base_dtype)
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+        return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), [1,1000]))
+        # return - tf.reduce_sum((y_true * tf.log(y_pred)))
+    return loss
 
 '''
 Defining some helper functions
@@ -125,12 +136,14 @@ def getNet(patchHeight, patchWidth,patchDepth,  ipCh, outCh):
     conv0 = Activation('relu')(conv0)
     conv0 = Dropout(0.2)(conv0)
     
+    #
     ReShp = Reshape((patchHeight,patchWidth, 16))(conv0)
     conv1 = Conv2D(16, (3, 3), padding='same')(ReShp)
     conv1 = BatchNormalization()(conv1)
     conv1 = Activation('relu')(conv1)
     conv1 = Dropout(0.2)(conv1)
 
+    #
     conv1 = concatenate([ReShp, conv1], axis=-1)
     conv1 = Conv2D(16, (3, 3), padding='same')(conv1)
     conv1 = BatchNormalization()(conv1)
@@ -141,11 +154,13 @@ def getNet(patchHeight, patchWidth,patchDepth,  ipCh, outCh):
     input2 = MaxPooling2D(pool_size=(2, 2))(ReShp)
     conv21 = concatenate([input2, pool1], axis=-1)
 
+    #
     conv2 = Conv2D(32, (3, 3), padding='same')(conv21)
     conv2 = BatchNormalization()(conv2)
     conv2 = Activation('relu')(conv2)
     conv2 = Dropout(0.2)(conv2)
 
+    #
     conv2 = concatenate([conv21, conv2], axis=-1)
     conv2 = Conv2D(32, (3, 3), padding='same')(conv2)
     conv2 = BatchNormalization()(conv2)
@@ -161,13 +176,13 @@ def getNet(patchHeight, patchWidth,patchDepth,  ipCh, outCh):
     conv3 = Activation('relu')(conv3)
     conv3 = Dropout(0.2)(conv3)
 
+    #
     conv3 = concatenate([conv31, conv3], axis=-1)
     conv3 = Conv2D(64, (3, 3), padding='same')(conv3)
     conv3 = BatchNormalization()(conv3)
     conv3 = Activation('relu')(conv3)
     pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
 
-    #
     input4 = MaxPooling2D(pool_size=(2, 2))(input3)
     conv41 = concatenate([input4, pool3], axis=-1)
 
@@ -239,6 +254,7 @@ def getNet(patchHeight, patchWidth,patchDepth,  ipCh, outCh):
     model = Model(inputs=input1, outputs=conv8)
     adm = Adam(lr=0.001,beta_1=0.9,beta_2=0.999,epsilon=1e-08)
     sgd = SGD(lr=0.005, decay=1e-6, momentum=0.9, nesterov=True)
+    # model.compile(optimizer=adm, loss=weighted_pixelwise_crossentropy(1))
     model.compile(optimizer=adm, loss=losses.categorical_crossentropy)
 
     return model
@@ -365,7 +381,7 @@ for ep in range(weig_load+1,no_ep+1):
     
     MCP=keras.callbacks.ModelCheckpoint(main_path+'CNN_output/weights/weights-%d.hdf5'%(ep), monitor='val_loss',save_best_only=False)
     
-    CerSegNet.fit(training_inp , training_gt_category, batch_size=b_size,  verbose=1 ,epochs=0, callbacks = [MCP])
+    CerSegNet.fit(training_inp , training_gt_category, batch_size=b_size,  verbose=1 ,epochs=1, callbacks = [MCP])
     
     
 ######################################################################################################
@@ -376,7 +392,7 @@ for ep in range(weig_load+1,no_ep+1):
         print('Training Accuracy:')
         t_dice = 0.0
         t_acc = 0.0
-        scr =0.0    
+        scr = 0.0    
         for trai_imgn in range(tr_images):
             print('\n\nloading image %d for Accuracy\n'% (trai_imgn))
             
@@ -394,6 +410,7 @@ for ep in range(weig_load+1,no_ep+1):
 
             trai_pre = np.argmax(prediction ,axis=-1).astype('uint8')
             print trai_pre.shape
+            print trai_gt.shape, trai_pre.shape
             trai_pre = np.reshape(trai_pre,trai_pre.shape[0]*trai_pre.shape[1]*trai_pre.shape[2]).astype('uint8')
             trai_gt = np.reshape(trai_gt,trai_gt.shape[0]*trai_gt.shape[1]*trai_gt.shape[2]).astype('uint8')
 
@@ -403,7 +420,15 @@ for ep in range(weig_load+1,no_ep+1):
             skl_accu = accuracy_score(trai_gt, trai_pre)
 
             print ('skl accu = ',skl_accu,'skl dice coeff = ',skl_dice,'zero accu = ',zero_accu, 'my_accu = ', my_accu)
+
+            print "LOLOLOL"
             trai_pre = np.reshape(trai_pre,[trai_inp.shape[0],trai_inp.shape[1],trai_inp.shape[2]]).astype('uint8')
+
+            new_image = nib.Nifti1Image(np.swapaxes(np.swapaxes(trai_pre, 0 , 2),0,1), affine=np.eye(4))
+
+            print new_image.shape
+            new_image.to_filename(main_path+'test.nii.gz')
+
             score = 0
             t_dice+=skl_dice
             t_acc += skl_accu
@@ -531,4 +556,3 @@ t_acc = t_acc/test_images
 print('\n\ntesting Overall Dice Coeffient: %f'%(t_dice))
 print('testing Overall Accuracy: %f'%(t_acc))
 print('testing Score: %f'%(scr))
-
